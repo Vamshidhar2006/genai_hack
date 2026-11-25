@@ -7,17 +7,21 @@ import requests
 class VLMSceneAnalyzer:
     def __init__(
         self,
-        model_name: str = "qwen2.5vl:3b",
+        model_name: str = "urbansight-qwen",
         ollama_url: str = "http://localhost:11434/api/chat",
         timeout: int = 180,
-        temperature: float = 0.1,
+        temperature: float = 0.35,
+        repeat_penalty: float = 1.15,
+        num_predict: int = 750,
     ):
         self.model_name = model_name
         self.ollama_url = ollama_url
         self.timeout = timeout
         self.temperature = temperature
+        self.repeat_penalty = repeat_penalty
+        self.num_predict = num_predict
 
-    def _encode_bgr_to_base64(self, bgr_image: np.ndarray, max_side: int = 1280) -> str:
+    def _encode_bgr_to_base64(self, bgr_image: np.ndarray, max_side: int = 640) -> str:
         if bgr_image is None or bgr_image.size == 0:
             raise ValueError("Input image is empty.")
 
@@ -29,7 +33,7 @@ class VLMSceneAnalyzer:
             else bgr_image
         )
 
-        ok, buffer = cv2.imencode(".jpg", resized, [int(cv2.IMWRITE_JPEG_QUALITY), 88])
+        ok, buffer = cv2.imencode(".jpg", resized, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
         if not ok:
             raise RuntimeError("Failed to encode image to JPEG.")
         return base64.b64encode(buffer.tobytes()).decode("utf-8")
@@ -47,7 +51,7 @@ class VLMSceneAnalyzer:
             lines.append("YOLO Counts: None detected above threshold.")
 
         if detections_list:
-            top_items = detections_list[:25]
+            top_items = detections_list[:15]
             box_notes = [
                 f"{d.get('label')} ({d.get('confidence')}) at {d.get('bbox')}"
                 for d in top_items
@@ -55,6 +59,42 @@ class VLMSceneAnalyzer:
             lines.append("Top YOLO Boxes [x1,y1,x2,y2]: " + "; ".join(box_notes))
 
         return "\n".join(lines)
+
+    def fallback_report(
+        self,
+        model_name: str,
+        detections_summary: dict | None = None,
+        detections_list: list[dict] | None = None,
+        reason: str = "",
+    ) -> dict:
+        counts_str = (
+            ", ".join(f"{k}: {v}" for k, v in detections_summary.items())
+            if detections_summary
+            else "None detected above threshold."
+        )
+        person_count = (detections_summary or {}).get("person", 0)
+        vehicle_count = sum(
+            (detections_summary or {}).get(k, 0)
+            for k in ("car", "motorcycle", "bus", "truck", "bicycle", "train")
+        )
+
+        report_text = (
+            f"1) Scene Overview\n"
+            f"Detection-grounded street summary ({model_name} fallback). Detected objects: {counts_str}.\n\n"
+            f"2) Traffic & Mobility\n"
+            f"Detected {vehicle_count} vehicle/mobility object(s) in the frame.\n\n"
+            f"3) Pedestrian & Safety Observations\n"
+            f"Detected {person_count} person detection(s); privacy anonymization applied prior to analysis.\n\n"
+            f"4) Infrastructure & Hazards\n"
+            f"Not visible from detector output alone.\n\n"
+            f"5) Actionable Recommendations\n"
+            f"Review annotated bounding boxes and verify live VLM runner status ({reason or 'Ollama vision error'})."
+        )
+        return {
+            "model": model_name,
+            "report": report_text,
+            "fallback": True,
+        }
 
     def analyze(
         self,
@@ -90,6 +130,8 @@ class VLMSceneAnalyzer:
             "keep_alive": "10m",
             "options": {
                 "temperature": self.temperature,
+                "repeat_penalty": self.repeat_penalty,
+                "num_predict": self.num_predict,
             },
             "messages": [
                 {"role": "system", "content": system_prompt},

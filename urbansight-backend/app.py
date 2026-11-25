@@ -29,7 +29,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5vl:3b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "urbansight-qwen")
 YOLO_MODEL = os.getenv("YOLO_MODEL", "yolov8n.pt")
 
 blurrer = PrivacyBlurrer(blur_kernel=(99, 99), padding=0.2, passes=2)
@@ -39,7 +39,7 @@ detector = StreetObjectDetector(
     iou_threshold=0.45,
     imgsz=640,
 )
-vlm_analyzer = VLMSceneAnalyzer(model_name=OLLAMA_MODEL, timeout=180, temperature=0.1)
+vlm_analyzer = VLMSceneAnalyzer(model_name=OLLAMA_MODEL, timeout=180, temperature=0.35)
 pdf_generator = PDFReportGenerator()
 
 
@@ -231,26 +231,27 @@ def analyze_scene_vlm(req: VLMAnalyzeRequest):
             model_name=target_model,
             timeout=vlm_analyzer.timeout,
             temperature=vlm_analyzer.temperature,
+            repeat_penalty=vlm_analyzer.repeat_penalty,
+            num_predict=vlm_analyzer.num_predict,
         )
         if target_model != vlm_analyzer.model_name
         else vlm_analyzer
     )
 
     try:
-        result = analyzer.analyze(
+        return analyzer.analyze(
             bgr_image=bgr_img,
             detections_summary=req.counts,
             detections_list=req.detections,
             focus_prompt=req.focus_prompt,
         )
-        return result
-    except requests.RequestException as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to reach Ollama at localhost:11434: {exc}",
-        ) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return analyzer.fallback_report(
+            model_name=target_model,
+            detections_summary=req.counts,
+            detections_list=req.detections,
+            reason=str(exc),
+        )
 
 
 class PDFReportRequest(BaseModel):

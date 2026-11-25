@@ -1,7 +1,11 @@
-﻿node_modules/
+﻿__pycache__/
+*.py[cod]
+*.egg-info/
 .venv/
 venv/
-__pycache__/
-*.pyc
+env/
+*.pt
+*.pdf
 .env
-dist/
+urbansight-frontend/node_modules/
+urbansight-frontend/dist/

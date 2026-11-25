@@ -41,7 +41,12 @@ class PDFReportGenerator:
             spaceAfter=6,
         )
 
-    def _bgr_to_rl_image(self, bgr_image: np.ndarray, max_width: float = 6.2 * inch, max_height: float = 3.6 * inch) -> RLImage | None:
+    def _bgr_to_rl_image(
+        self,
+        bgr_image: np.ndarray,
+        max_width: float = 6.2 * inch,
+        max_height: float = 3.6 * inch,
+    ) -> RLImage | None:
         if bgr_image is None or bgr_image.size == 0:
             return None
         ok, buf = cv2.imencode(".jpg", bgr_image)
@@ -62,7 +67,7 @@ class PDFReportGenerator:
         blurred_count: int = 0,
         object_counts: dict | None = None,
         focus_prompt: str | None = None,
-        model_name: str = "qwen2.5vl",
+        model_name: str = "urbansight-qwen",
         processed_image: np.ndarray | None = None,
     ) -> str:
         parent_dir = os.path.dirname(output_path)

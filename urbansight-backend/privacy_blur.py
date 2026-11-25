@@ -71,7 +71,9 @@ class PrivacyBlurrer:
                         area_b = max(0, bx2 - bx1) * max(0, by2 - by1)
                         union = area_a + area_b - inter
                         iou = inter / union if union > 0 else 0.0
-                        overlap_smaller = inter / min(area_a, area_b) if min(area_a, area_b) > 0 else 0.0
+                        overlap_smaller = (
+                            inter / min(area_a, area_b) if min(area_a, area_b) > 0 else 0.0
+                        )
 
                         if iou >= iou_threshold or overlap_smaller >= 0.5:
                             ax1 = min(ax1, bx1)
