@@ -6,3 +6,13 @@ ultralytics
 reportlab
 requests
 pillow
+
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+pydantic>=2.7.0
+requests>=2.32.0
+numpy>=1.26.0
+opencv-python>=4.10.0
+ultralytics>=8.3.0
+reportlab>=4.2.0

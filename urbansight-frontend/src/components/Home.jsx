@@ -45,6 +45,7 @@ function Home({ useMockMode }) {
   const [error, setError] = useState("");
 
   const handleFileSelect = (file) => {
+    if (!file) return;
     setImageFile(file);
     setPreviewUrl(URL.createObjectURL(file));
     setStage("idle");
@@ -62,6 +63,18 @@ function Home({ useMockMode }) {
     setError("");
   };
 
+  const getUploadBlob = async () => {
+    if (imageFile instanceof Blob && imageFile.size > 0) {
+      return imageFile;
+    }
+    if (previewUrl) {
+      const resp = await fetch(previewUrl);
+      const blob = await resp.blob();
+      if (blob.size > 0) return blob;
+    }
+    throw new Error("Please select a valid street image before running Live API.");
+  };
+
   const handleRunPipeline = async () => {
     setError("");
     setStage1Data(null);
@@ -70,10 +83,12 @@ function Home({ useMockMode }) {
     try {
       setStage("yolo_blur_loading");
       let s1;
+      let imageForVlm = "";
 
       if (useMockMode) {
         await new Promise((r) => setTimeout(r, 1800));
         const demoImg = await makeDemoAnnotatedImage(previewUrl);
+        imageForVlm = demoImg;
         s1 = {
           session_id: "demo_01",
           blurred_detected_image: demoImg,
@@ -85,14 +100,37 @@ function Home({ useMockMode }) {
           ],
         };
       } else {
+        const uploadBlob = await getUploadBlob();
         const formData = new FormData();
-        formData.append("image", imageFile);
+        formData.append("file", uploadBlob, imageFile?.name || "street.jpg");
+        formData.append("enable_blur", "true");
+        formData.append("street_only", "false");
+
         const res1 = await fetch(`${API_BASE_URL}/api/preprocess-detect`, {
           method: "POST",
           body: formData,
         });
-        if (!res1.ok) throw new Error("Stage 1 failed in Python backend");
-        s1 = await res1.json();
+
+        if (!res1.ok) {
+          let detail = "Stage 1 failed in Python backend";
+          try {
+            const errJson = await res1.json();
+            if (errJson?.detail) detail = errJson.detail;
+          } catch {
+            // Keep default message if response is not JSON
+          }
+          throw new Error(detail);
+        }
+
+        const rawS1 = await res1.json();
+        const annotatedOrBlurred = rawS1.annotated_image || rawS1.blurred_image || "";
+        imageForVlm = rawS1.blurred_image || rawS1.annotated_image || "";
+
+        s1 = {
+          ...rawS1,
+          blurred_detected_image: annotatedOrBlurred,
+          faces_blurred_count: rawS1.blurred_count ?? 0,
+        };
       }
 
       setStage1Data(s1);
@@ -110,12 +148,29 @@ function Home({ useMockMode }) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            session_id: s1.session_id,
-            user_prompt: userPrompt,
+            image_base64: imageForVlm,
+            counts: s1.counts || {},
+            detections: s1.detections || [],
+            focus_prompt: userPrompt,
           }),
         });
-        if (!res2.ok) throw new Error("Stage 2 failed in Python backend");
-        s2 = await res2.json();
+
+        if (!res2.ok) {
+          let detail = "Stage 2 failed in Python backend";
+          try {
+            const errJson = await res2.json();
+            if (errJson?.detail) detail = errJson.detail;
+          } catch {
+            // Keep default message if response is not JSON
+          }
+          throw new Error(detail);
+        }
+
+        const rawS2 = await res2.json();
+        s2 = {
+          ...rawS2,
+          description: rawS2.report || rawS2.description || "",
+        };
       }
 
       setStage2Data(s2);
